@@ -1,0 +1,28 @@
+# ocr_pdf2md
+
+本地网页工具：上传 PDF / 图片，调用飞桨 PaddleOCR 官方文档解析 API，导出 Markdown / JSON。
+
+## 功能
+
+- 批量上传与有限并发队列（SSE 进度）
+- 多分栏预览（源文件 / Markdown / JSON）
+- 多 Access Token 轮询，缓解 429 限流
+- 结果按内容哈希缓存；MD 导出可选是否附带图片
+
+## 快速开始
+
+```bash
+npm install
+cp .env.example .env   # 可选；也可在网页「系统设置」里配置 Token
+npm run dev
+```
+
+浏览器打开 http://127.0.0.1:8787
+
+Access Token 获取：https://aistudio.baidu.com/account/accessToken
+
+> Token 保存在本地 `data/settings.json` 或 `.env`，二者均已被 gitignore，请勿提交。
+
+## 环境变量
+
+见 `.env.example`（`PADDLEOCR_ACCESS_TOKEN`、`PORT`、`CONCURRENCY`）。
