@@ -46,3 +46,20 @@ railway domain
 ```
 
 Token 请只写在 Railway Variables。本地开发默认仍可用；云上省钱模式由 `ECONOMY_MODE=1` 开启。
+
+## 本机中继（推荐日常 OCR）
+
+云端页面只当 UI；**上传与调百度走你家宽带**，避免 Railway 跨境传文件超时。
+
+1. 本机项目目录：
+
+```bash
+npm install
+npm run relay
+```
+
+2. 浏览器打开云端站点（或本机 `http://127.0.0.1:8787`）
+3. **系统设置 → 启用本机中继** → 地址 `http://127.0.0.1:8787` → 测试连接 → 保存  
+4. Token / 并发保存在**本机** `data/settings.json`（不要指望写进 Railway）
+
+侧栏出现「本机中继」徽章即表示 API 已指向本机。

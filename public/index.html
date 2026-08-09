@@ -18,6 +18,7 @@
         <div class="brand">
           <span class="mark">PaddleOCR</span>
           <span class="sub">本地批量解析</span>
+          <span id="relayBadge" class="relay-badge hidden" title="API 走本机中继">本机中继</span>
         </div>
 
         <button id="btnNew" class="btn-primary" type="button">+ 新解析</button>
@@ -177,6 +178,27 @@
           <h2>系统设置</h2>
           <button value="cancel" class="btn-icon" type="submit">×</button>
         </header>
+        <fieldset class="export-format relay-fieldset">
+          <legend>本机中继（走你家网络）</legend>
+          <label class="check-row">
+            <input id="relayEnabledInput" type="checkbox" />
+            <span>启用本机中继</span>
+          </label>
+          <label class="field">
+            <span>中继地址</span>
+            <input
+              id="relayBaseInput"
+              type="url"
+              placeholder="http://127.0.0.1:8787"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <p class="muted settings-hint" id="relayHint">
+            本机先运行 <code>npm run relay</code>，再打开云端页面并启用此项。上传/OCR 将直连百度，不经 Railway。
+          </p>
+          <button id="btnTestRelay" class="btn-mini" type="button">测试连接</button>
+        </fieldset>
         <div id="tokenStatus" class="token-status">检查 Token…</div>
         <div id="tokenList" class="token-list"></div>
         <label class="field">

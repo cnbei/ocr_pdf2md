@@ -78,6 +78,7 @@ button, .btn-icon, .btn-mini, .btn-primary, .btn-ghost, .btn-text { cursor: poin
 
 .brand {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
@@ -528,6 +529,27 @@ button, .btn-icon, .btn-mini, .btn-primary, .btn-ghost, .btn-text { cursor: poin
   flex: 1 1 100%;
   margin-left: 24px;
   font-size: 0.78rem;
+}
+.relay-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0f6b4c;
+  background: var(--accent-soft);
+  border: 1px solid rgba(15, 107, 76, 0.28);
+}
+.relay-badge.hidden { display: none; }
+.relay-fieldset {
+  margin-bottom: 12px;
+}
+.relay-fieldset code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
 }
 .token-status {
   padding: 10px 12px;

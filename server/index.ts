@@ -36,10 +36,14 @@ const HOST = process.env.HOST || "0.0.0.0";
 const IS_RAILWAY = Boolean(
   process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID,
 );
-const ECONOMY_MODE =
-  process.env.ECONOMY_MODE === "1" ||
-  process.env.ECONOMY_MODE === "true" ||
-  IS_RAILWAY;
+const RELAY_MODE =
+  process.env.RELAY_MODE === "1" || process.env.RELAY_MODE === "true";
+// 本机中继关闭省钱限制；Railway 云端仍默认省钱
+const ECONOMY_MODE = RELAY_MODE
+  ? false
+  : process.env.ECONOMY_MODE === "1" ||
+    process.env.ECONOMY_MODE === "true" ||
+    IS_RAILWAY;
 
 interface AppSettings {
   accessTokens: string[];
@@ -211,7 +215,15 @@ const upload = multer({
 
 const app = express();
 app.set("trust proxy", 1);
-app.use(cors());
+// 反射 Origin：云端页面可跨域调用本机中继
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
+  }),
+);
 app.use(express.json({ limit: "2mb" }));
 // 静态资源长缓存：闲时接近“静态站”，减少重复传输
 app.use(
@@ -266,9 +278,11 @@ function publicJob(job: ReturnType<JobQueue["list"]>[number]) {
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
+    relayMode: RELAY_MODE,
     economyMode: ECONOMY_MODE,
     skipImagePrefetch:
-      process.env.SKIP_IMAGE_PREFETCH === "1" || ECONOMY_MODE,
+      !RELAY_MODE &&
+      (process.env.SKIP_IMAGE_PREFETCH === "1" || ECONOMY_MODE),
     models: ALLOWED_MODELS,
     ...publicSettings(),
     stats: queue.stats(),
@@ -774,6 +788,12 @@ app.use(
 
 app.listen(PORT, HOST, () => {
   console.log(`PaddleOCR 服务已启动: http://${HOST}:${PORT}`);
+  if (RELAY_MODE) {
+    console.log(
+      "本机中继模式: 可在云端页面「系统设置」填写本地址，OCR 走本机网络直连百度",
+    );
+    console.log(`中继地址示例: http://127.0.0.1:${PORT}`);
+  }
   if (IS_RAILWAY) {
     console.log("运行环境: Railway（Token / 并发优先读环境变量）");
   }
