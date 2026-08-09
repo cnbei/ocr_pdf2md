@@ -34,14 +34,6 @@ const exportIncludeImagesEl = document.getElementById("exportIncludeImages");
 const exportImagesRow = document.getElementById("exportImagesRow");
 
 const EXPORT_IMAGES_KEY = "paddleocr.exportIncludeImages";
-const RELAY_ENABLED_KEY = "paddleocr.relayEnabled";
-const RELAY_BASE_KEY = "paddleocr.relayBase";
-const DEFAULT_RELAY_BASE = "http://127.0.0.1:8787";
-
-const relayBadge = document.getElementById("relayBadge");
-const relayEnabledInput = document.getElementById("relayEnabledInput");
-const relayBaseInput = document.getElementById("relayBaseInput");
-const relayHint = document.getElementById("relayHint");
 
 function getExportIncludeImages() {
   const saved = localStorage.getItem(EXPORT_IMAGES_KEY);
@@ -65,74 +57,11 @@ function syncExportImagesUi() {
   }
 }
 
-function normalizeRelayBase(raw) {
-  const value = String(raw || "").trim().replace(/\/+$/, "");
-  if (!value) return "";
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return "";
-  }
-}
-
-function isRelayEnabled() {
-  return localStorage.getItem(RELAY_ENABLED_KEY) === "1";
-}
-
-function getRelayBase() {
-  if (!isRelayEnabled()) return "";
-  return (
-    normalizeRelayBase(localStorage.getItem(RELAY_BASE_KEY)) ||
-    DEFAULT_RELAY_BASE
-  );
-}
-
-function setRelayConfig({ enabled, base }) {
-  localStorage.setItem(RELAY_ENABLED_KEY, enabled ? "1" : "0");
-  if (base !== undefined) {
-    localStorage.setItem(
-      RELAY_BASE_KEY,
-      normalizeRelayBase(base) || DEFAULT_RELAY_BASE,
-    );
-  }
-  syncRelayBadge();
-}
-
-function syncRelayBadge() {
-  const on = Boolean(getRelayBase());
-  relayBadge.classList.toggle("hidden", !on);
-  relayBadge.title = on
-    ? `API → ${getRelayBase()}（本机网络）`
-    : "未启用本机中继";
-}
-
-function syncRelaySettingsUi() {
-  relayEnabledInput.checked = isRelayEnabled();
-  relayBaseInput.value =
-    localStorage.getItem(RELAY_BASE_KEY) || DEFAULT_RELAY_BASE;
-  relayBaseInput.disabled = !relayEnabledInput.checked;
-}
-
-/** 所有 API 走中继基址（启用时），否则走当前站点 */
-function apiUrl(path) {
-  if (!path) return path;
-  if (/^https?:\/\//i.test(path)) return path;
-  const p = path.startsWith("/") ? path : `/${path}`;
-  const base = getRelayBase();
-  return base ? `${base}${p}` : p;
-}
-
-function apiFetch(path, init) {
-  return fetch(apiUrl(path), init);
-}
-
 function mdDownloadUrl(baseUrl) {
   if (!baseUrl) return "#";
-  const url = new URL(apiUrl(baseUrl), window.location.href);
+  const url = new URL(baseUrl, window.location.origin);
   url.searchParams.set("images", getExportIncludeImages() ? "1" : "0");
-  return url.toString();
+  return url.pathname + url.search;
 }
 
 let jobs = [];
@@ -388,9 +317,9 @@ function renderPreview(job) {
   previewPane.classList.remove("empty");
 
   if (job.isPdf) {
-    previewPane.innerHTML = `<iframe class="preview-frame" title="pdf-preview" src="${apiUrl(job.previewUrl)}"></iframe>`;
+    previewPane.innerHTML = `<iframe class="preview-frame" title="pdf-preview" src="${job.previewUrl}"></iframe>`;
   } else if (job.isImage) {
-    previewPane.innerHTML = `<img class="preview-image" alt="${escapeHtml(job.sourceName)}" src="${apiUrl(job.previewUrl)}" />`;
+    previewPane.innerHTML = `<img class="preview-image" alt="${escapeHtml(job.sourceName)}" src="${job.previewUrl}" />`;
   } else {
     previewPane.classList.add("empty");
     previewPane.innerHTML = `<div class="empty-hint"><p>该文件类型暂不支持预览</p></div>`;
@@ -403,7 +332,7 @@ async function loadDetail(job, force = false) {
     return detailCache.get(job.id);
   }
   if (job.status !== "done") return null;
-  const res = await apiFetch(`/api/jobs/${job.id}`);
+  const res = await fetch(`/api/jobs/${job.id}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "加载结果失败");
   detailCache.set(job.id, data);
@@ -547,7 +476,7 @@ function hasActiveJobs() {
 }
 
 async function pullSnapshot() {
-  const res = await apiFetch("/api/jobs");
+  const res = await fetch("/api/jobs");
   if (!res.ok) throw new Error("jobs fetch failed");
   applySnapshot(await res.json());
 }
@@ -573,45 +502,25 @@ function schedulePoll() {
 function bumpLive() {
   pullSnapshot()
     .catch(() => {
-      const relay = getRelayBase();
-      statsLine.textContent = relay
-        ? `无法连接本机中继 ${relay}（请先 npm run relay）`
-        : "无法加载任务列表";
+      statsLine.textContent = "无法加载任务列表";
     })
     .finally(schedulePoll);
 }
 
-function startSse() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
-  eventSource = new EventSource(apiUrl("/api/events?force=1"));
-  eventSource.onmessage = (event) => {
-    try {
-      applySnapshot(JSON.parse(event.data));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-  eventSource.onerror = () => {
-    statsLine.textContent = getRelayBase()
-      ? "本机中继实时连接中断，改用轮询…"
-      : "实时连接中断，正在重试…";
-    // 中继断开时降级轮询，避免一直挂死
-    if (getRelayBase() && eventSource) {
-      eventSource.close();
-      eventSource = null;
-      schedulePoll();
-    }
-  };
-}
-
 function connectEvents() {
   const wantLive = new URLSearchParams(location.search).has("live");
-  // 本机中继默认 SSE（本机不怕耗电/计费）
-  if (wantLive || getRelayBase()) {
-    startSse();
+  if (wantLive) {
+    eventSource = new EventSource("/api/events?force=1");
+    eventSource.onmessage = (event) => {
+      try {
+        applySnapshot(JSON.parse(event.data));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    eventSource.onerror = () => {
+      statsLine.textContent = "实时连接中断，正在重试…";
+    };
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -620,7 +529,6 @@ function connectEvents() {
       pollTimer = null;
     } else {
       bumpLive();
-      if (getRelayBase() && !eventSource) startSse();
     }
   });
   ["click", "keydown"].forEach((type) => {
@@ -657,37 +565,25 @@ function renderTokenList(tokens = []) {
 }
 
 async function refreshHealth() {
-  syncRelaySettingsUi();
-  syncRelayBadge();
   try {
-    const res = await apiFetch("/api/settings");
+    const res = await fetch("/api/settings");
     const data = await res.json();
     concurrencyInput.value = String(data.concurrency || 2);
     accessTokenInput.value = "";
     clearTokenInput.checked = false;
     if (data.tokenHelpUrl) tokenHelpLink.href = data.tokenHelpUrl;
     renderTokenList(data.tokens || []);
-    const relay = getRelayBase();
     if (data.tokenConfigured) {
-      tokenStatus.textContent = `${relay ? "本机中继 · " : ""}Token 池 ${data.tokenCount} 个 · 可用 ${data.availableCount ?? data.tokenCount}`;
+      tokenStatus.textContent = `Token 池 ${data.tokenCount} 个 · 可用 ${data.availableCount ?? data.tokenCount}`;
       tokenStatus.className = "token-status ok";
       accessTokenInput.placeholder = "继续添加更多 Token（每行一个），可提高限流上限";
     } else {
-      tokenStatus.textContent = relay
-        ? "已连上本机中继，但尚未配置 Access Token"
-        : "尚未配置 Access Token，解析前请先添加";
+      tokenStatus.textContent = "尚未配置 Access Token，解析前请先添加";
       tokenStatus.className = "token-status warn";
       accessTokenInput.placeholder = "粘贴一个或多个 Token，每行一个";
     }
-    if (relayHint) {
-      relayHint.textContent = relay
-        ? `当前 API → ${relay}。Token / 并发保存在本机中继，不经云端。`
-        : "本机先运行 npm run relay，再打开云端页面并启用此项。上传/OCR 将直连百度，不经 Railway。";
-    }
   } catch {
-    tokenStatus.textContent = getRelayBase()
-      ? `无法连接本机中继 ${getRelayBase()}（请先在本机 npm run relay）`
-      : "无法连接服务";
+    tokenStatus.textContent = "无法连接服务";
     tokenStatus.className = "token-status warn";
   }
 }
@@ -771,7 +667,7 @@ async function enqueueFiles() {
   const btn = document.getElementById("btnEnqueue");
   btn.disabled = true;
   try {
-    const res = await apiFetch("/api/jobs", { method: "POST", body });
+    const res = await fetch("/api/jobs", { method: "POST", body });
     const data = await readErrorPayload(res);
     if (!res.ok) {
       const skippedHint = data?.skipped?.length
@@ -815,7 +711,7 @@ async function exportDoneBatch() {
   const btn = document.getElementById("btnDoExport");
   btn.disabled = true;
   try {
-    const res = await apiFetch("/api/download-batch", {
+    const res = await fetch("/api/download-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ format, ids: doneIds, includeImages }),
@@ -879,7 +775,7 @@ tokenListEl.addEventListener("click", async (event) => {
   const btn = event.target.closest("[data-remove-token]");
   if (!btn) return;
   const index = Number(btn.getAttribute("data-remove-token"));
-  const res = await apiFetch("/api/settings", {
+  const res = await fetch("/api/settings", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ removeTokenIndex: index }),
@@ -898,24 +794,10 @@ document.getElementById("btnSaveSettings").addEventListener("click", async () =>
   const concurrency = Number(concurrencyInput.value);
   const clearTokens = clearTokenInput.checked;
   const tokenText = accessTokenInput.value.trim();
-  const relayEnabled = relayEnabledInput.checked;
-  const relayBase = normalizeRelayBase(relayBaseInput.value) || DEFAULT_RELAY_BASE;
   if (!Number.isFinite(concurrency) || concurrency < 1 || concurrency > 8) {
     toast("并发数需为 1–8");
     return;
   }
-  if (relayEnabled && !normalizeRelayBase(relayBaseInput.value || DEFAULT_RELAY_BASE)) {
-    toast("中继地址无效，请填写 http://127.0.0.1:8787");
-    return;
-  }
-
-  setRelayConfig({ enabled: relayEnabled, base: relayBase });
-  // 切换中继后重建实时通道
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
-  if (getRelayBase()) startSse();
 
   const payload = { concurrency, clearTokens };
   if (tokenText) payload.addTokens = tokenText;
@@ -923,7 +805,7 @@ document.getElementById("btnSaveSettings").addEventListener("click", async () =>
   const btn = document.getElementById("btnSaveSettings");
   btn.disabled = true;
   try {
-    const res = await apiFetch("/api/settings", {
+    const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -936,8 +818,6 @@ document.getElementById("btnSaveSettings").addEventListener("click", async () =>
 
     concurrencyInput.value = String(data.concurrency);
     const parts = [`并发 ${data.concurrency}`];
-    if (getRelayBase()) parts.push(`中继 ${getRelayBase()}`);
-    else parts.push("云端直连");
     if (payload.clearTokens) parts.push("Token 已清空");
     else if (data.tokenUpdated) parts.push(`Token 池 ${data.tokenCount} 个`);
     else if (data.tokenConfigured) parts.push(`Token 池 ${data.tokenCount} 个`);
@@ -945,46 +825,14 @@ document.getElementById("btnSaveSettings").addEventListener("click", async () =>
 
     toast(`设置已保存：${parts.join(" · ")}`);
     settingsDialog.close();
-    detailCache.clear();
-    bumpLive();
     await refreshHealth();
   } finally {
     btn.disabled = false;
   }
 });
 
-relayEnabledInput.addEventListener("change", () => {
-  relayBaseInput.disabled = !relayEnabledInput.checked;
-});
-
-document.getElementById("btnTestRelay").addEventListener("click", async () => {
-  const base =
-    normalizeRelayBase(relayBaseInput.value) || DEFAULT_RELAY_BASE;
-  if (!base) {
-    toast("中继地址无效");
-    return;
-  }
-  const btn = document.getElementById("btnTestRelay");
-  btn.disabled = true;
-  try {
-    const res = await fetch(`${base}/api/health`, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "连接失败");
-    toast(
-      `中继正常 · Token ${data.tokenCount || 0} · 并发 ${data.concurrency || "-"}` +
-        (data.relayMode ? " · relay" : ""),
-    );
-  } catch (err) {
-    toast(
-      `连不上 ${base}：请先在本机运行 npm run relay（${err.message || err}）`,
-    );
-  } finally {
-    btn.disabled = false;
-  }
-});
-
 document.getElementById("btnClear").addEventListener("click", async () => {
-  const res = await apiFetch("/api/jobs/clear-finished", { method: "POST" });
+  const res = await fetch("/api/jobs/clear-finished", { method: "POST" });
   const data = await res.json();
   if (!res.ok) {
     toast(data.error || "清理失败");
@@ -1040,7 +888,7 @@ document.getElementById("btnCopy").addEventListener("click", async () => {
 document.getElementById("btnRetry").addEventListener("click", async () => {
   const job = selectedJob();
   if (!job) return;
-  const res = await apiFetch(`/api/jobs/${job.id}/retry`, { method: "POST" });
+  const res = await fetch(`/api/jobs/${job.id}/retry`, { method: "POST" });
   const data = await res.json();
   if (!res.ok) {
     toast(data.error || "重试失败");
@@ -1102,8 +950,6 @@ window.addEventListener("drop", (event) => {
 
 loadLayout();
 setupSplitters();
-syncRelayBadge();
-syncRelaySettingsUi();
 connectEvents();
 refreshHealth();
 bumpLive();

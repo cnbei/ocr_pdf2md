@@ -9,8 +9,7 @@
   },
   "scripts": {
     "dev": "tsx server/index.ts",
-    "start": "tsx server/index.ts",
-    "relay": "RELAY_MODE=1 ECONOMY_MODE=0 SKIP_IMAGE_PREFETCH=0 tsx server/index.ts"
+    "start": "tsx server/index.ts"
   },
   "dependencies": {
     "@paddleocr/api-sdk": "^0.2.3",

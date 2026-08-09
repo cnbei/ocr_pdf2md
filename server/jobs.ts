@@ -103,11 +103,7 @@ export class JobQueue {
     concurrency = 2,
   ) {
     this.concurrency = Math.max(1, Math.min(8, concurrency));
-    // 本机中继强制 multipart 直传（走用户宽带）；云端才用 fileUrl 回拉
-    this.publicBaseUrl =
-      process.env.RELAY_MODE === "1" || process.env.RELAY_MODE === "true"
-        ? ""
-        : publicBaseUrlFromEnv();
+    this.publicBaseUrl = publicBaseUrlFromEnv();
     this.syncThrottle();
   }
 
