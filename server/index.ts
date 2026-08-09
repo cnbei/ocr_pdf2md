@@ -36,6 +36,10 @@ const HOST = process.env.HOST || "0.0.0.0";
 const IS_RAILWAY = Boolean(
   process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID,
 );
+const ECONOMY_MODE =
+  process.env.ECONOMY_MODE === "1" ||
+  process.env.ECONOMY_MODE === "true" ||
+  IS_RAILWAY;
 
 interface AppSettings {
   accessTokens: string[];
@@ -209,7 +213,19 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static(PUBLIC_DIR));
+// 静态资源长缓存：闲时接近“静态站”，减少重复传输
+app.use(
+  express.static(PUBLIC_DIR, {
+    maxAge: ECONOMY_MODE ? "7d" : 0,
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
+  }),
+);
 
 function publicJob(job: ReturnType<JobQueue["list"]>[number]) {
   return {
@@ -250,8 +266,11 @@ function publicJob(job: ReturnType<JobQueue["list"]>[number]) {
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
-    ...publicSettings(),
+    economyMode: ECONOMY_MODE,
+    skipImagePrefetch:
+      process.env.SKIP_IMAGE_PREFETCH === "1" || ECONOMY_MODE,
     models: ALLOWED_MODELS,
+    ...publicSettings(),
     stats: queue.stats(),
   });
 });
@@ -482,6 +501,15 @@ app.patch("/api/settings", async (req, res) => {
 });
 
 app.get("/api/events", (req, res) => {
+  // 省钱模式默认不鼓励长连接；仍保留接口供 ?live=1
+  if (ECONOMY_MODE && req.query.force !== "1") {
+    res.status(503).json({
+      error: "economy_mode_no_sse",
+      hint: "省钱模式请用短轮询 /api/jobs；需要 SSE 时加 ?force=1",
+    });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -498,9 +526,10 @@ app.get("/api/events", (req, res) => {
 
   send();
   const unsubscribe = queue.subscribe(send);
+  // 心跳拉长，降低空转写流量
   const heartbeat = setInterval(() => {
     res.write(": ping\n\n");
-  }, 15000);
+  }, 60000);
 
   req.on("close", () => {
     clearInterval(heartbeat);
@@ -747,6 +776,11 @@ app.listen(PORT, HOST, () => {
   console.log(`PaddleOCR 服务已启动: http://${HOST}:${PORT}`);
   if (IS_RAILWAY) {
     console.log("运行环境: Railway（Token / 并发优先读环境变量）");
+  }
+  if (ECONOMY_MODE) {
+    console.log(
+      "省钱模式: 低并发、不预拉图片、禁用默认 SSE；闲时依赖 Railway App Sleep",
+    );
   }
   console.log(`批量队列并发: ${queue.getConcurrency()}（可在系统设置中调整）`);
   if (!tokenPool.hasTokens()) {

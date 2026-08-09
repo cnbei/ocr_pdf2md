@@ -7,4 +7,7 @@ startCommand = "npm start"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 3
+# 闲时自动休眠：无流量不计费常驻
+sleepApplication = true
+numReplicas = 1

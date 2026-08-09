@@ -31,16 +31,18 @@ Access Token 获取：https://aistudio.baidu.com/account/accessToken
 - `PADDLEOCR_ACCESS_TOKEN`：单个 Token（兼容）
 - `PORT` / `HOST` / `CONCURRENCY`
 
-## Railway 部署
+## Railway 部署（省钱）
 
-仓库已含 `Dockerfile` + `railway.toml`（健康检查 `/api/health`）。
+仓库已含 `Dockerfile` + `railway.toml`：
+
+- **App Sleep**：闲时自动休眠，无流量不计常驻
+- **低规格**：建议 0.5 vCPU / 0.5 GB 内存，`CONCURRENCY=1`
+- **无常驻 SSE**：前端有任务才短轮询；关标签即停请求
+- **不预拉图片**：导出时勾选「附带图片」再下载
 
 ```bash
-railway init --name ocr_pdf2md
-railway variable set PADDLEOCR_ACCESS_TOKENS="token1,token2,token3,token4"
-railway variable set CONCURRENCY=4
 railway up
 railway domain
 ```
 
-Token 请只写在 Railway Variables，不要提交进 git。
+Token 请只写在 Railway Variables。本地开发默认仍可用；云上省钱模式由 `ECONOMY_MODE=1` 开启。

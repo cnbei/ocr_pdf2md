@@ -654,18 +654,23 @@ export class JobQueue {
       await fs.writeFile(path.join(outDir, "result.md"), markdown, "utf8");
       await fs.writeFile(path.join(outDir, "result.json"), jsonText, "utf8");
 
-      // MD 里是 <img src="imgs/...">，必须把图下到同级 imgs/，否则导出后全是裂图
-      const imgStats = await ensureMarkdownImages(outDir, result.pages).catch(
-        (err) => {
-          console.warn(`[images] ${job.sourceName} 下载失败`, err);
-          return { total: 0, downloaded: 0, failed: 0 };
-        },
-      );
-      if (imgStats.total > 0) {
-        console.log(
-          `[images] ${job.sourceName}: ${imgStats.downloaded}/${imgStats.total} 张已保存` +
-            (imgStats.failed ? `，失败 ${imgStats.failed}` : ""),
+      // 省钱模式可跳过预拉图片（导出勾选「附带图片」时再下载）
+      const skipPrefetch =
+        process.env.SKIP_IMAGE_PREFETCH === "1" ||
+        process.env.ECONOMY_MODE === "1";
+      if (!skipPrefetch) {
+        const imgStats = await ensureMarkdownImages(outDir, result.pages).catch(
+          (err) => {
+            console.warn(`[images] ${job.sourceName} 下载失败`, err);
+            return { total: 0, downloaded: 0, failed: 0 };
+          },
         );
+        if (imgStats.total > 0) {
+          console.log(
+            `[images] ${job.sourceName}: ${imgStats.downloaded}/${imgStats.total} 张已保存` +
+              (imgStats.failed ? `，失败 ${imgStats.failed}` : ""),
+          );
+        }
       }
 
       job.status = "done";

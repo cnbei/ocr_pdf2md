@@ -464,18 +464,76 @@ function applySnapshot(payload) {
   }
 }
 
-function connectEvents() {
-  const es = new EventSource("/api/events");
-  es.onmessage = (event) => {
+let pollTimer = null;
+let eventSource = null;
+
+function hasActiveJobs() {
+  return jobs.some((j) => j.status === "queued" || j.status === "running");
+}
+
+async function pullSnapshot() {
+  const res = await fetch("/api/jobs");
+  if (!res.ok) throw new Error("jobs fetch failed");
+  applySnapshot(await res.json());
+}
+
+/** 省钱轮询：有任务时才刷；无任务/后台标签停止请求，方便 Railway 休眠 */
+function schedulePoll() {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  if (document.hidden) return;
+  if (!hasActiveJobs()) return;
+  pollTimer = setTimeout(async () => {
     try {
-      applySnapshot(JSON.parse(event.data));
-    } catch (err) {
-      console.error(err);
+      await pullSnapshot();
+    } catch {
+      statsLine.textContent = "刷新失败，稍后重试…";
     }
-  };
-  es.onerror = () => {
-    statsLine.textContent = "实时连接中断，正在重试…";
-  };
+    schedulePoll();
+  }, 2500);
+}
+
+function bumpLive() {
+  pullSnapshot()
+    .catch(() => {
+      statsLine.textContent = "无法加载任务列表";
+    })
+    .finally(schedulePoll);
+}
+
+function connectEvents() {
+  const wantLive = new URLSearchParams(location.search).has("live");
+  if (wantLive) {
+    eventSource = new EventSource("/api/events?force=1");
+    eventSource.onmessage = (event) => {
+      try {
+        applySnapshot(JSON.parse(event.data));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    eventSource.onerror = () => {
+      statsLine.textContent = "实时连接中断，正在重试…";
+    };
+    return;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+    } else {
+      bumpLive();
+    }
+  });
+  // 用户操作时再拉一次
+  ["click", "keydown"].forEach((type) => {
+    document.addEventListener(type, () => {
+      if (hasActiveJobs()) schedulePoll();
+    }, { passive: true });
+  });
 }
 
 function renderTokenList(tokens = []) {
@@ -615,6 +673,7 @@ async function enqueueFiles() {
     uploadDialog.close();
     filesInput.value = "";
     updateFileSummary();
+    bumpLive();
     if (data.created?.[0]) await selectJob(data.created[0].id);
 
     const skippedCount = (data.skippedCount || 0) + localSkipped.length;
@@ -774,6 +833,7 @@ document.getElementById("btnClear").addEventListener("click", async () => {
     return;
   }
   detailCache.clear();
+  bumpLive();
   toast(`已清理 ${data.removed} 个任务`);
 });
 
@@ -829,6 +889,7 @@ document.getElementById("btnRetry").addEventListener("click", async () => {
     return;
   }
   detailCache.delete(job.id);
+  bumpLive();
   toast("已重新入队");
 });
 
@@ -885,9 +946,4 @@ loadLayout();
 setupSplitters();
 connectEvents();
 refreshHealth();
-fetch("/api/jobs")
-  .then((res) => res.json())
-  .then(applySnapshot)
-  .catch(() => {
-    statsLine.textContent = "无法加载任务列表";
-  });
+bumpLive();
