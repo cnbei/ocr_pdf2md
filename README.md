@@ -25,4 +25,22 @@ Access Token 获取：https://aistudio.baidu.com/account/accessToken
 
 ## 环境变量
 
-见 `.env.example`（`PADDLEOCR_ACCESS_TOKEN`、`PORT`、`CONCURRENCY`）。
+见 `.env.example`：
+
+- `PADDLEOCR_ACCESS_TOKENS`：多个 Token，换行或逗号分隔（推荐）
+- `PADDLEOCR_ACCESS_TOKEN`：单个 Token（兼容）
+- `PORT` / `HOST` / `CONCURRENCY`
+
+## Railway 部署
+
+仓库已含 `Dockerfile` + `railway.toml`（健康检查 `/api/health`）。
+
+```bash
+railway init --name ocr_pdf2md
+railway variable set PADDLEOCR_ACCESS_TOKENS="token1,token2,token3,token4"
+railway variable set CONCURRENCY=4
+railway up
+railway domain
+```
+
+Token 请只写在 Railway Variables，不要提交进 git。

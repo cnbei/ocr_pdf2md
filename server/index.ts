@@ -32,14 +32,27 @@ const DATA_DIR = path.join(ROOT, "data");
 const SETTINGS_PATH = path.join(DATA_DIR, "settings.json");
 
 const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST || "0.0.0.0";
+const IS_RAILWAY = Boolean(
+  process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID,
+);
 
 interface AppSettings {
   accessTokens: string[];
   concurrency: number;
 }
 
+/** 支持 PADDLEOCR_ACCESS_TOKENS（多行/逗号）与旧的单值 PADDLEOCR_ACCESS_TOKEN */
+function tokensFromEnv() {
+  return normalizeTokens(
+    [process.env.PADDLEOCR_ACCESS_TOKENS, process.env.PADDLEOCR_ACCESS_TOKEN]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
 let settings: AppSettings = {
-  accessTokens: normalizeTokens(process.env.PADDLEOCR_ACCESS_TOKEN || ""),
+  accessTokens: tokensFromEnv(),
   concurrency: Math.max(1, Math.min(8, Number(process.env.CONCURRENCY || 2) || 2)),
 };
 
@@ -57,9 +70,10 @@ function applyTokensToPool() {
 }
 
 async function loadSettings() {
+  const envTokens = tokensFromEnv();
   try {
     if (!existsSync(SETTINGS_PATH)) {
-      if (settings.accessTokens.length) await saveSettings();
+      if (envTokens.length && !IS_RAILWAY) await saveSettings();
       applyTokensToPool();
       return;
     }
@@ -68,7 +82,13 @@ async function loadSettings() {
       accessToken?: string;
     };
 
-    if (Array.isArray(parsed.accessTokens) || typeof parsed.accessToken === "string") {
+    // Railway / 环境变量优先：容器重启后磁盘上的 settings 不可靠
+    if (envTokens.length) {
+      settings.accessTokens = envTokens;
+    } else if (
+      Array.isArray(parsed.accessTokens) ||
+      typeof parsed.accessToken === "string"
+    ) {
       const merged = [
         ...(Array.isArray(parsed.accessTokens) ? parsed.accessTokens : []),
         ...(typeof parsed.accessToken === "string" ? [parsed.accessToken] : []),
@@ -77,13 +97,17 @@ async function loadSettings() {
     }
 
     if (Number.isFinite(Number(parsed.concurrency))) {
-      settings.concurrency = Math.max(
-        1,
-        Math.min(8, Math.floor(Number(parsed.concurrency))),
-      );
+      // 环境变量 CONCURRENCY 已在启动时读入；仅当未显式设置时用文件值
+      if (!process.env.CONCURRENCY) {
+        settings.concurrency = Math.max(
+          1,
+          Math.min(8, Math.floor(Number(parsed.concurrency))),
+        );
+      }
     }
   } catch (err) {
     console.warn("[settings] 读取失败，将使用环境变量/默认值", err);
+    if (envTokens.length) settings.accessTokens = envTokens;
   }
   applyTokensToPool();
 }
@@ -182,6 +206,7 @@ const upload = multer({
 });
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(PUBLIC_DIR));
@@ -718,12 +743,15 @@ app.use(
   },
 );
 
-app.listen(PORT, () => {
-  console.log(`PaddleOCR 本地站已启动: http://127.0.0.1:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`PaddleOCR 服务已启动: http://${HOST}:${PORT}`);
+  if (IS_RAILWAY) {
+    console.log("运行环境: Railway（Token / 并发优先读环境变量）");
+  }
   console.log(`批量队列并发: ${queue.getConcurrency()}（可在系统设置中调整）`);
   if (!tokenPool.hasTokens()) {
     console.warn(
-      "警告: 未配置 Access Token。请打开网页「系统设置」添加（支持多个），或设置环境变量 PADDLEOCR_ACCESS_TOKEN。",
+      "警告: 未配置 Access Token。请打开网页「系统设置」添加（支持多个），或设置环境变量 PADDLEOCR_ACCESS_TOKENS / PADDLEOCR_ACCESS_TOKEN。",
     );
   } else {
     console.log(

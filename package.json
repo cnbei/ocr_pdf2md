@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Local web UI: PDF/image → Markdown via PaddleOCR official API",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx server/index.ts",
     "start": "tsx server/index.ts"
@@ -14,7 +17,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "tsx": "^4.23.11"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",
@@ -22,7 +26,6 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
     "@types/node": "^26.2.0",
-    "tsx": "^4.23.11",
     "typescript": "^7.0.2"
   }
 }
