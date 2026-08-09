@@ -33,12 +33,13 @@ const exportHint = document.getElementById("exportHint");
 const exportIncludeImagesEl = document.getElementById("exportIncludeImages");
 const exportImagesRow = document.getElementById("exportImagesRow");
 
-const EXPORT_IMAGES_KEY = "paddleocr.exportIncludeImages";
+const EXPORT_IMAGES_KEY = "paddleocr.exportIncludeImages.v2";
 
 function getExportIncludeImages() {
+  // 全局默认不导出图片；仅当用户显式勾选并保存为 1/true 时开启
   const saved = localStorage.getItem(EXPORT_IMAGES_KEY);
-  if (saved === null) return true;
-  return saved !== "0" && saved !== "false";
+  if (saved === null) return false;
+  return saved === "1" || saved === "true";
 }
 
 function setExportIncludeImages(value) {
@@ -728,18 +729,32 @@ async function exportDoneBatch() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `paddleocr-${format}-done-${doneIds.length}.zip`;
+    const cd = res.headers.get("content-disposition") || "";
+    const starred = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const plain = cd.match(/filename="?([^";]+)"?/i);
+    let filename = starred
+      ? decodeURIComponent(starred[1])
+      : plain
+        ? plain[1]
+        : null;
+    if (!filename) {
+      const isZip = (contentType.includes("zip") || includeImages || doneIds.length > 1);
+      filename = isZip
+        ? `paddleocr-${format}-done-${doneIds.length}.zip`
+        : `paddleocr-export.${format === "json" ? "json" : "md"}`;
+    }
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
     exportDialog.close();
+    const packNote =
+      doneIds.length > 1 || includeImages ? "压缩包" : `${format.toUpperCase()} 单文件`;
     const imgNote =
       format === "md" ? (includeImages ? "含图片" : "不含图片") : null;
     toast(
-      `已导出 ${doneIds.length} 个已完成结果（${format.toUpperCase()}${
-        imgNote ? " · " + imgNote : ""
-      }）`,
+      `已导出 ${doneIds.length} 个（${packNote}${imgNote ? " · " + imgNote : ""}）`,
     );
     // 同步单文件 MD 链接上的 images 参数
     const job = selectedJob();
@@ -845,7 +860,10 @@ document.getElementById("btnClear").addEventListener("click", async () => {
 
 document.getElementById("btnExportAll").addEventListener("click", () => {
   const doneCount = jobs.filter((j) => j.status === "done").length;
-  exportHint.textContent = `仅打包当前已完成的 ${doneCount} 个结果，不影响排队/解析中的任务。`;
+  exportHint.textContent =
+    doneCount <= 1
+      ? `将导出 ${doneCount} 个已完成结果为单个 ${exportDialog.querySelector('input[name="exportFormat"]:checked')?.value === "json" ? "JSON" : "MD"} 文件（默认不含图片）。`
+      : `将导出 ${doneCount} 个已完成结果为压缩包（默认不含图片），不影响进行中的任务。`;
   exportIncludeImagesEl.checked = getExportIncludeImages();
   syncExportImagesUi();
   exportDialog.showModal();

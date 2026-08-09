@@ -98,7 +98,7 @@
           </div>
           <div class="result-actions">
             <button id="btnCopy" class="btn-icon" type="button" title="复制">复制</button>
-            <a id="btnDlMd" class="btn-icon" href="#" title="导出 Markdown">MD</a>
+            <a id="btnDlMd" class="btn-icon" href="#" title="导出 Markdown（默认不含图片）">MD</a>
             <a id="btnDlJson" class="btn-icon" href="#" title="导出 JSON">JSON</a>
             <button id="btnRetry" class="btn-icon" type="button" title="重试">重试</button>
           </div>
@@ -160,9 +160,9 @@
           <label><input type="radio" name="exportFormat" value="json" /> JSON (.json)</label>
         </fieldset>
         <label class="export-images" id="exportImagesRow">
-          <input type="checkbox" id="exportIncludeImages" checked />
+          <input type="checkbox" id="exportIncludeImages" />
           <span>附带图片</span>
-          <span class="muted export-images-hint">勾选后打包 imgs/；不勾选只导出纯文本 MD</span>
+          <span class="muted export-images-hint">默认不导出图片；勾选后打包 imgs/（多文件仍为 zip）</span>
         </label>
         <footer>
           <button value="cancel" class="btn-ghost" type="submit">取消</button>

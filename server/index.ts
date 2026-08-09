@@ -537,7 +537,7 @@ app.get("/api/events", (req, res) => {
   });
 });
 
-function parseIncludeImages(value: unknown, fallback = true): boolean {
+function parseIncludeImages(value: unknown, fallback = false): boolean {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
   const s = String(value).trim().toLowerCase();
@@ -572,7 +572,7 @@ app.get("/api/download/:jobId/:format", async (req, res) => {
     : jobId;
   const includeImages =
     format === "md" &&
-    parseIncludeImages(req.query.images ?? req.query.includeImages, true);
+    parseIncludeImages(req.query.images ?? req.query.includeImages, false);
 
   // JSON / 纯 MD：直接下载单文件
   if (format === "json" || !includeImages) {
@@ -687,6 +687,24 @@ async function exportDoneJobs(
     }
   }
 
+  // 单文件且无需打包图片：直接按所选格式导出
+  if (items.length === 1 && !withImages) {
+    const item = items[0];
+    const ext = format === "json" ? "json" : "md";
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(`${item.baseName}.${ext}`)}`,
+    );
+    res.setHeader(
+      "Content-Type",
+      format === "json"
+        ? "application/json; charset=utf-8"
+        : "text/markdown; charset=utf-8",
+    );
+    createReadStream(item.filePath).pipe(res);
+    return;
+  }
+
   res.setHeader("Content-Type", "application/zip");
   res.setHeader(
     "Content-Disposition",
@@ -735,7 +753,7 @@ app.get("/api/download-batch", async (req, res) => {
     : [];
   const includeImages = parseIncludeImages(
     req.query.images ?? req.query.includeImages,
-    true,
+    false,
   );
   await exportDoneJobs(req, res, format, ids, includeImages);
 });
@@ -747,7 +765,7 @@ app.post("/api/download-batch", async (req, res) => {
     : [];
   const includeImages = parseIncludeImages(
     req.body?.includeImages ?? req.body?.images,
-    true,
+    false,
   );
   await exportDoneJobs(req, res, format, ids, includeImages);
 });
