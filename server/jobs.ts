@@ -72,6 +72,16 @@ export interface JobResultPayload {
 
 type Listener = (jobs: JobRecord[]) => void;
 
+function publicBaseUrlFromEnv() {
+  const explicit = (process.env.PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const domain = (process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (domain) return `https://${domain.replace(/^https?:\/\//, "")}`;
+  const staticUrl = (process.env.RAILWAY_STATIC_URL || "").trim().replace(/\/+$/, "");
+  if (staticUrl) return staticUrl;
+  return "";
+}
+
 export class JobQueue {
   private jobs = new Map<string, JobRecord>();
   private order: string[] = [];
@@ -83,6 +93,7 @@ export class JobQueue {
   private lastSubmitAt = 0;
   private submitChain: Promise<void> = Promise.resolve();
   private wakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private publicBaseUrl: string;
 
   constructor(
     private uploadDir: string,
@@ -92,6 +103,7 @@ export class JobQueue {
     concurrency = 2,
   ) {
     this.concurrency = Math.max(1, Math.min(8, concurrency));
+    this.publicBaseUrl = publicBaseUrlFromEnv();
     this.syncThrottle();
   }
 
@@ -568,8 +580,12 @@ export class JobQueue {
         );
       }
 
+      // Railway→百度 multipart 上传常超时；有公网域名时改 fileUrl，让官方回拉文件
+      const fileUrl = this.publicBaseUrl
+        ? `${this.publicBaseUrl}/api/jobs/${job.id}/file`
+        : undefined;
       const request = {
-        filePath: job.filePath,
+        ...(fileUrl ? { fileUrl } : { filePath: job.filePath }),
         model: job.model,
         pageRanges: job.pageRanges,
         options: {
@@ -580,6 +596,12 @@ export class JobQueue {
           relevelTitles: true,
         },
       };
+
+      if (fileUrl) {
+        console.log(`[submit] ${job.sourceName} 使用 fileUrl 回拉（避免跨境直传超时）`);
+      } else {
+        console.log(`[submit] ${job.sourceName} 使用本地 filePath 直传`);
+      }
 
       // 提交可在多 Token 间 failover；提交后状态查询绑定同一 Token
       const { value: submitted, token } = await this.enqueueSubmit(() =>
@@ -704,10 +726,14 @@ export class JobQueue {
           .catch((err) => console.warn("[cache] 写入失败", err));
       }
     } catch (err) {
-      const message =
+      let message =
         err instanceof PaddleOCRAPIError || err instanceof Error
           ? err.message
           : "解析失败";
+      if (/timed out|timeout|aborted/i.test(message)) {
+        message =
+          "提交官方 API 超时。云端已优先用文件回拉；请点「重试」。若仍失败可先在本地跑，或缩小页码范围。";
+      }
 
       if (this.isRateLimitError(err) || this.isRateLimitMessage(message)) {
         this.requeueAfterRateLimit(job, message);

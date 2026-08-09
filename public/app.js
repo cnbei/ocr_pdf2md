@@ -376,12 +376,16 @@ async function renderResult() {
       elapsedSec > 0 && extracted > 0
         ? `${((extracted / elapsedSec) * 60).toFixed(1)} 页/分钟`
         : null;
-    const progress =
-      total > 0
-        ? `已解析 ${extracted}/${total} 页 · 已用时 ${elapsedSec}s${speed ? ` · ${speed}` : ""}`
-        : "正在提交并等待官方 API…";
+    let progress;
+    if (total > 0) {
+      progress = `已解析 ${extracted}/${total} 页 · 已用时 ${elapsedSec}s${speed ? ` · ${speed}` : ""}`;
+    } else if (job.remoteJobId) {
+      progress = `已提交官方任务，等待开始出页… · 已用时 ${elapsedSec}s`;
+    } else {
+      progress = `正在提交到官方 API… · 已用时 ${elapsedSec}s`;
+    }
     resultPane.classList.remove("empty");
-    resultPane.innerHTML = `<div class="result-status">${progress}<br/>未卡住：PaddleOCR-VL 对多页大 PDF 本来就慢，多路并发还会互相抢配额。左侧页数在涨就说明还在跑。</div>`;
+    resultPane.innerHTML = `<div class="result-status">${progress}<br/>云端解析页数涨起来才算进入真正 OCR；提交阶段进度条可能停在 0%，属正常。</div>`;
     return;
   }
 
